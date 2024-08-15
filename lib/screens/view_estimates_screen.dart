@@ -1,87 +1,100 @@
 import 'package:flutter/material.dart';
+import 'package:practice/backend.dart';
 import 'package:practice/models/models.dart';
 
 class ViewEstimatesScreen extends StatelessWidget {
-  final List<VendorEstimate> estimates;
+  final Map<String, EquipmentQuantity> selectedEquipment;
 
-  ViewEstimatesScreen({required this.estimates});
+  ViewEstimatesScreen({required this.selectedEquipment});
 
   @override
   Widget build(BuildContext context) {
+    final estimates = _calculateEstimates();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vendors Estimates'),
+        title: Text('Vendor Estimates'),
         backgroundColor: Colors.teal,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ListView.builder(
-          itemCount: estimates.length,
-          itemBuilder: (context, index) {
-            final estimate = estimates[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 8.0),
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+      body: ListView.builder(
+        itemCount: estimates.length,
+        itemBuilder: (context, index) {
+          final estimate = estimates[index];
+          return Card(
+            margin: EdgeInsets.all(8.0),
+            child: ExpansionTile(
+              title: Text('Vendor: ${estimate.vendorId}'),
+              subtitle: Text(
+                'Total Estimate: \$${estimate.totalEstimate.toStringAsFixed(2)}',
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16.0),
-                leading: const Icon(
-                  Icons.business,
-                  color: Colors.teal,
-                  size: 40,
-                ),
-                title: Text(
-                  'Vendor: ${estimate.vendorId}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
+              children: estimate.equipmentPrices.entries.map((entry) {
+                final equipmentName = entry.key;
+                final price = entry.value;
+                final quantity = selectedEquipment[equipmentName]!;
+                final isHourly = MockBackend.availableHourlyEquipment
+                    .any((e) => e.name == equipmentName);
+
+                return ListTile(
+                  title: Text(
+                    '$equipmentName (${isHourly ? "Hourly" : "Daily"})',
                   ),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ...estimate.equipmentPrices.entries.map((entry) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4.0),
-                        child: Text(
-                          '${entry.key}: \$${entry.value.toStringAsFixed(2)} per unit',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      );
-                    }).toList(),
-                    const SizedBox(height: 8.0),
-                    Text(
-                      'Total: \$${estimate.totalPrice.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Colors.redAccent,
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Quantity: ${quantity.quantity}'),
+                      if (isHourly) Text('Hours: ${quantity.hours}'),
+                      if (!isHourly) Text('Days: ${quantity.days}'),
+                      Text(
+                        'Rate: \$${price.toStringAsFixed(2)}',
                       ),
-                    ),
-                  ],
-                ),
-                trailing: ElevatedButton(
-                  onPressed: () {
-                    // Handle selection logic here
-                    print('Selected estimate from ${estimate.vendorId}');
-                  },
-                  child: const Text('Select'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      Text(
+                        'Total: \$${quantity.calculateTotal(
+                              isHourly ? price : 0.0,
+                              isHourly ? 0.0 : price,
+                            ).toStringAsFixed(2)}',
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            );
-          },
-        ),
+                );
+              }).toList(),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  List<VendorEstimate> _calculateEstimates() {
+    List<VendorEstimate> estimates = [];
+
+    for (var vendor in MockBackend.vendorPrices.entries) {
+      double total = 0.0;
+      Map<String, double> equipmentPrices = {};
+
+      for (var equipment in selectedEquipment.entries) {
+        final equipmentName = equipment.key;
+        final quantity = equipment.value;
+        final price = vendor.value[equipmentName] ?? 0.0;
+
+        // Determine if the equipment is hourly or daily
+        bool isHourly = MockBackend.availableHourlyEquipment
+            .any((e) => e.name == equipmentName);
+
+        double hourlyRate = isHourly ? price : 0.0;
+        double dailyRate = isHourly ? 0.0 : price;
+
+        double itemTotal = quantity.calculateTotal(hourlyRate, dailyRate);
+        equipmentPrices[equipmentName] = price;
+        total += itemTotal;
+      }
+
+      estimates.add(VendorEstimate(
+        vendorId: vendor.key,
+        equipmentPrices: equipmentPrices,
+        totalEstimate: total,
+      ));
+    }
+
+    return estimates;
   }
 }
